@@ -18,9 +18,19 @@ async function bootstrap() {
   const app = express()
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+  const allowedOrigins = String(env.clientOrigin)
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+
   app.use(
     cors({
-      origin: env.clientOrigin,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+          return callback(null, true)
+        }
+        return callback(new Error(`Origin ${origin} not allowed by CORS`))
+      },
       credentials: true,
     }),
   )
