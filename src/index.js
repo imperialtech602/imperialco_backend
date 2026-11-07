@@ -9,6 +9,8 @@ import { uploadsDir } from './middleware/upload.js'
 import authRoutes from './routes/auth.js'
 import productRoutes from './routes/products.js'
 import orderRoutes from './routes/orders.js'
+import userRoutes from './routes/users.js'
+import knowledgeRoutes from './routes/knowledge.js'
 import { ensureAdminSeed } from './seed.js'
 
 async function bootstrap() {
@@ -26,7 +28,17 @@ async function bootstrap() {
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        const isLocalDev =
+          env.nodeEnv !== 'production' &&
+          origin &&
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+
+        if (
+          !origin ||
+          allowedOrigins.includes('*') ||
+          allowedOrigins.includes(origin) ||
+          isLocalDev
+        ) {
           return callback(null, true)
         }
         return callback(new Error(`Origin ${origin} not allowed by CORS`))
@@ -46,12 +58,14 @@ async function bootstrap() {
   app.use('/api/auth', authRoutes)
   app.use('/api/products', productRoutes)
   app.use('/api/orders', orderRoutes)
+  app.use('/api/users', userRoutes)
+  app.use('/api/knowledge', knowledgeRoutes)
 
   app.use(notFoundHandler)
   app.use(errorHandler)
 
-  app.listen(env.port, () => {
-    console.log(`[api] Listening on http://localhost:${env.port}`)
+  app.listen(env.port, '0.0.0.0', () => {
+    console.log(`[api] Listening on port ${env.port}`)
   })
 }
 

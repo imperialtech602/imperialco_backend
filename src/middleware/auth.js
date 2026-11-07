@@ -30,3 +30,17 @@ export async function requireAuth(req, res, next) {
     return next(error)
   }
 }
+
+export function requirePermission(permissionKey) {
+  return (req, res, next) => {
+    if (!req.admin) return next(new AppError('Authentication required', 401))
+    if (req.admin.hasPermission(permissionKey)) return next()
+    return next(new AppError('You do not have permission for this area', 403))
+  }
+}
+
+export function requireSuperAdmin(req, res, next) {
+  if (!req.admin) return next(new AppError('Authentication required', 401))
+  if (req.admin.role === 'superadmin') return next()
+  return next(new AppError('Super admin access required', 403))
+}

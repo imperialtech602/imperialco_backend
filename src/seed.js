@@ -3,17 +3,36 @@ import { env } from './config/env.js'
 import { Admin } from './models/Admin.js'
 
 export async function ensureAdminSeed() {
-  const existing = await Admin.findOne({ email: env.adminEmail.toLowerCase() })
-  if (existing) return
+  const email = env.adminEmail.toLowerCase()
+  const existing = await Admin.findOne({ email })
+
+  const fullPermissions = {
+    products: true,
+    orders: true,
+    knowledgeHub: true,
+  }
+
+  if (existing) {
+    // Keep password in sync with .env for local/dev convenience
+    existing.passwordHash = await Admin.hashPassword(env.adminPassword)
+    existing.name = existing.name || 'Imperial Admin'
+    existing.role = 'superadmin'
+    existing.permissions = fullPermissions
+    existing.isActive = true
+    await existing.save()
+    console.log(`[seed] Admin updated: ${email}`)
+    return
+  }
 
   const passwordHash = await Admin.hashPassword(env.adminPassword)
   await Admin.create({
     name: 'Imperial Admin',
-    email: env.adminEmail.toLowerCase(),
+    email,
     passwordHash,
     role: 'superadmin',
+    permissions: fullPermissions,
   })
-  console.log(`[seed] Admin created: ${env.adminEmail}`)
+  console.log(`[seed] Admin created: ${email}`)
 }
 
 async function run() {

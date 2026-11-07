@@ -91,6 +91,7 @@ function buildProductFilter(query) {
   return filter
 }
 
+/** Safe fields for public catalog — never expose pricing/cost. */
 export function toPublicProduct(doc) {
   const p = doc.toObject ? doc.toObject() : doc
   return {
@@ -111,12 +112,20 @@ export function toPublicProduct(doc) {
     strength: p.strength,
     packSize: p.packSize,
     sourceCode: p.sourceCode,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  }
+}
+
+/** Full product for authenticated admin only. */
+export function toAdminProduct(doc) {
+  const p = doc.toObject ? doc.toObject() : doc
+  return {
+    ...toPublicProduct(doc),
     salesDescription: p.salesDescription,
     salesRate: p.salesRate,
     purchaseDescription: p.purchaseDescription,
     purchaseRate: p.purchaseRate,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
   }
 }
 
@@ -139,7 +148,7 @@ export async function listProducts(req, res, next) {
     res.json({
       success: true,
       data: {
-        items: items.map(toPublicProduct),
+        items: items.map(toAdminProduct),
         pagination: {
           page,
           limit,
@@ -161,6 +170,9 @@ export async function listCatalog(req, res, next) {
 
     const [items, total, countries, forms] = await Promise.all([
       Product.find(filter)
+        .select(
+          '-salesRate -purchaseRate -purchaseDescription -salesDescription -__v',
+        )
         .sort({ itemName: 1 })
         .skip((page - 1) * limit)
         .limit(limit),
@@ -198,7 +210,7 @@ export async function getProduct(req, res, next) {
   try {
     const product = await Product.findById(req.params.id)
     if (!product) throw new AppError('Product not found', 404)
-    res.json({ success: true, data: toPublicProduct(product) })
+    res.json({ success: true, data: toAdminProduct(product) })
   } catch (error) {
     next(error)
   }
@@ -211,7 +223,7 @@ export async function createProduct(req, res, next) {
     if (existing) throw new AppError('A product with this item id already exists', 409)
 
     const product = await Product.create(body)
-    res.status(201).json({ success: true, data: toPublicProduct(product) })
+    res.status(201).json({ success: true, data: toAdminProduct(product) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return next(new AppError('Invalid product data', 400, error.flatten()))
@@ -236,7 +248,7 @@ export async function updateProduct(req, res, next) {
       runValidators: true,
     })
     if (!product) throw new AppError('Product not found', 404)
-    res.json({ success: true, data: toPublicProduct(product) })
+    res.json({ success: true, data: toAdminProduct(product) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return next(new AppError('Invalid product data', 400, error.flatten()))

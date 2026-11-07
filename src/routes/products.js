@@ -10,19 +10,20 @@ import {
   getProductMeta,
   listCatalog,
 } from '../controllers/productController.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, requirePermission } from '../middleware/auth.js'
 import { excelUpload } from '../middleware/upload.js'
 
 const router = Router()
+const canProducts = [requireAuth, requirePermission('products')]
 
 router.get('/catalog', listCatalog)
-router.get('/meta', requireAuth, getProductMeta)
-router.get('/template', requireAuth, downloadTemplate)
-router.post('/import', requireAuth, excelUpload.single('file'), importProducts)
-router.get('/', requireAuth, listProducts)
-router.post('/', requireAuth, createProduct)
-router.get('/:id', requireAuth, getProduct)
-router.put('/:id', requireAuth, updateProduct)
-router.delete('/:id', requireAuth, deleteProduct)
+router.get('/meta', ...canProducts, getProductMeta)
+router.get('/template', ...canProducts, downloadTemplate)
+router.post('/import', ...canProducts, excelUpload.single('file'), importProducts)
+router.get('/', ...canProducts, listProducts)
+router.post('/', ...canProducts, createProduct)
+router.get('/:id', ...canProducts, getProduct)
+router.put('/:id', ...canProducts, updateProduct)
+router.delete('/:id', ...canProducts, deleteProduct)
 
 export default router

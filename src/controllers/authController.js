@@ -22,12 +22,7 @@ export async function login(req, res, next) {
       success: true,
       data: {
         token,
-        admin: {
-          id: admin._id,
-          name: admin.name,
-          email: admin.email,
-          role: admin.role,
-        },
+        admin: admin.toSafeJSON(),
       },
     })
   } catch (error) {
@@ -41,11 +36,6 @@ export async function login(req, res, next) {
 export async function me(req, res) {
   res.json({
     success: true,
-    data: {
-      id: req.admin._id,
-      name: req.admin.name,
-      email: req.admin.email,
-      role: req.admin.role,
-    },
+    data: req.admin.toSafeJSON(),
   })
 }
