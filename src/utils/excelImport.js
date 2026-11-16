@@ -57,13 +57,8 @@ function toStatus(value) {
   return 'active'
 }
 
-export function parseProductWorkbook(buffer) {
-  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
-  const sheetName = workbook.SheetNames[0]
-  if (!sheetName) return { rows: [], errors: ['Workbook has no sheets'] }
-
-  const sheet = workbook.Sheets[sheetName]
-  const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
+/** Normalize object rows (keys = sheet/Excel headers) into Product payloads. */
+export function normalizeProductRows(rawRows = []) {
   const rows = []
   const errors = []
 
@@ -74,8 +69,8 @@ export function parseProductWorkbook(buffer) {
       if (field) mapped[field] = value
     }
 
-    const itemId = String(mapped.itemId || '').trim()
-    const itemName = String(mapped.itemName || '').trim()
+    const itemId = String(mapped.itemId ?? '').trim()
+    const itemName = String(mapped.itemName ?? '').trim()
 
     if (!itemId || !itemName) {
       errors.push(`Row ${index + 2}: item id and item name are required`)
@@ -104,6 +99,44 @@ export function parseProductWorkbook(buffer) {
   })
 
   return { rows, errors }
+}
+
+/** Convert a header + value matrix (Sheets API shape) into object rows. */
+export function matrixToObjectRows(values = []) {
+  if (!values.length) return []
+  const [headerRow, ...dataRows] = values
+  const headers = headerRow.map((h) => String(h ?? '').trim())
+
+  return dataRows
+    .filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''))
+    .map((row) => {
+      const obj = {}
+      headers.forEach((header, i) => {
+        if (!header) return
+        obj[header] = row[i] ?? ''
+      })
+      return obj
+    })
+}
+
+export function parseProductWorkbook(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) return { rows: [], errors: ['Workbook has no sheets'] }
+
+  const sheet = workbook.Sheets[sheetName]
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
+  return normalizeProductRows(rawRows)
+}
+
+export function parseProductCsv(csvText) {
+  const workbook = XLSX.read(csvText, { type: 'string', raw: false })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) return { rows: [], errors: ['CSV has no sheets'] }
+
+  const sheet = workbook.Sheets[sheetName]
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
+  return normalizeProductRows(rawRows)
 }
 
 export function buildProductTemplateBuffer() {

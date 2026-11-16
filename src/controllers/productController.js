@@ -5,6 +5,52 @@ import {
   parseProductWorkbook,
   buildProductTemplateBuffer,
 } from '../utils/excelImport.js'
+import { fetchProductsFromGoogleSheet } from '../utils/sheetsImport.js'
+
+async function upsertProductRows(rows, parseErrors = []) {
+  const rowErrors = [...parseErrors]
+  if (!rows.length) {
+    return { created: 0, updated: 0, total: 0, errors: rowErrors }
+  }
+
+  const now = new Date()
+  const ops = rows.map((row) => ({
+    updateOne: {
+      filter: { itemId: row.itemId },
+      update: {
+        $set: { ...row, updatedAt: now },
+        $setOnInsert: { createdAt: now },
+      },
+      upsert: true,
+    },
+  }))
+
+  try {
+    const result = await Product.bulkWrite(ops, { ordered: false })
+    return {
+      created: result.upsertedCount || 0,
+      updated: result.matchedCount || 0,
+      total: rows.length,
+      errors: rowErrors,
+    }
+  } catch (err) {
+    if (err?.name === 'MongoBulkWriteError' && err.result) {
+      const writeErrors = Array.isArray(err.writeErrors) ? err.writeErrors : []
+      for (const writeError of writeErrors) {
+        const idx = writeError.index
+        const itemId = rows[idx]?.itemId || `index ${idx}`
+        rowErrors.push(`${itemId}: ${writeError.errmsg || writeError.message}`)
+      }
+      return {
+        created: err.result.upsertedCount || 0,
+        updated: err.result.matchedCount || 0,
+        total: rows.length,
+        errors: rowErrors,
+      }
+    }
+    throw err
+  }
+}
 
 const productFields = {
   itemId: z.string().trim().min(1),
@@ -276,33 +322,28 @@ export async function importProducts(req, res, next) {
       throw new AppError('No valid product rows found in file', 400, errors)
     }
 
-    let created = 0
-    let updated = 0
-    const rowErrors = [...errors]
+    const result = await upsertProductRows(rows, errors)
+    res.json({ success: true, data: result })
+  } catch (error) {
+    next(error)
+  }
+}
 
-    for (const row of rows) {
-      try {
-        const existing = await Product.findOne({ itemId: row.itemId })
-        if (existing) {
-          Object.assign(existing, row)
-          await existing.save()
-          updated += 1
-        } else {
-          await Product.create(row)
-          created += 1
-        }
-      } catch (err) {
-        rowErrors.push(`${row.itemId}: ${err.message}`)
-      }
+/** Midnight / on-demand sync from the Field Mapping Google Sheet `items` tab. */
+export async function syncProductsFromSheets(req, res, next) {
+  try {
+    const { rows, errors } = await fetchProductsFromGoogleSheet()
+    if (!rows.length) {
+      throw new AppError('No valid product rows found in Google Sheet', 400, errors)
     }
 
+    const result = await upsertProductRows(rows, errors)
     res.json({
       success: true,
       data: {
-        created,
-        updated,
-        total: rows.length,
-        errors: rowErrors,
+        ...result,
+        source: 'google-sheets',
+        syncedAt: new Date().toISOString(),
       },
     })
   } catch (error) {

@@ -28,8 +28,8 @@ async function bootstrap() {
   app.use(
     cors({
       origin(origin, callback) {
-        const isLocalDev =
-          env.nodeEnv !== 'production' &&
+        // Allow local Vite ports when testing frontend against the live API.
+        const isLocalhost =
           origin &&
           /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
 
@@ -37,7 +37,7 @@ async function bootstrap() {
           !origin ||
           allowedOrigins.includes('*') ||
           allowedOrigins.includes(origin) ||
-          isLocalDev
+          isLocalhost
         ) {
           return callback(null, true)
         }

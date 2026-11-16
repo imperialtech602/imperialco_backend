@@ -22,3 +22,34 @@ services:
         sync: false
       - key: CLIENT_ORIGIN
         sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        value: 1NmrVWn6pWnKDHInWa0dCELFkb1FYMVBobPNPMdGZerM
+      - key: GOOGLE_SHEETS_RANGE
+        value: items!A1:Z
+      - key: GOOGLE_SHEETS_GID
+        value: "924637876"
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+  # Midnight Pakistan Standard Time (UTC+5) = 19:00 UTC
+  - type: cron
+    name: imperial-co-product-sheets-sync
+    runtime: node
+    plan: starter
+    region: singapore
+    schedule: "0 19 * * *"
+    buildCommand: echo "cron curl only"
+    startCommand: >-
+      curl -fsS -X POST
+      -H "x-cron-secret: $CRON_SECRET"
+      "$SYNC_URL"
+    envVars:
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: imperial-co-api
+          envVarKey: CRON_SECRET
+      - key: SYNC_URL
+        value: https://imperialco-backend.onrender.com/api/products/sync/sheets

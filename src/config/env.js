@@ -22,4 +22,14 @@ export const env = {
   adminEmail: process.env.ADMIN_EMAIL || 'admin@imperialco.biz',
   adminPassword: process.env.ADMIN_PASSWORD || 'Admin@123456',
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  /** Shared secret for midnight product sync (Render cron / external scheduler). */
+  cronSecret: process.env.CRON_SECRET || '',
+  /** Field Mapping spreadsheet: https://docs.google.com/spreadsheets/d/<id>/edit */
+  googleSheetsSpreadsheetId:
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID ||
+    '1NmrVWn6pWnKDHInWa0dCELFkb1FYMVBobPNPMdGZerM',
+  googleSheetsRange: process.env.GOOGLE_SHEETS_RANGE || 'items!A1:Z',
+  googleSheetsGid: process.env.GOOGLE_SHEETS_GID || '924637876',
+  /** Full service-account JSON as a single-line string (preferred for private sheets). */
+  googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
 }
