@@ -1,6 +1,8 @@
 import { connectDb } from './config/db.js'
 import { env } from './config/env.js'
 import { Admin } from './models/Admin.js'
+import { KnowledgePost } from './models/KnowledgePost.js'
+import { KNOWLEDGE_SEED_ARTICLES } from './data/knowledgeSeedArticles.js'
 
 export async function ensureAdminSeed() {
   const email = env.adminEmail.toLowerCase()
@@ -13,7 +15,6 @@ export async function ensureAdminSeed() {
   }
 
   if (existing) {
-    // Keep password in sync with .env for local/dev convenience
     existing.passwordHash = await Admin.hashPassword(env.adminPassword)
     existing.name = existing.name || 'Imperial Admin'
     existing.role = 'superadmin'
@@ -21,11 +22,11 @@ export async function ensureAdminSeed() {
     existing.isActive = true
     await existing.save()
     console.log(`[seed] Admin updated: ${email}`)
-    return
+    return existing
   }
 
   const passwordHash = await Admin.hashPassword(env.adminPassword)
-  await Admin.create({
+  const created = await Admin.create({
     name: 'Imperial Admin',
     email,
     passwordHash,
@@ -33,12 +34,40 @@ export async function ensureAdminSeed() {
     permissions: fullPermissions,
   })
   console.log(`[seed] Admin created: ${email}`)
+  return created
+}
+
+export async function ensureKnowledgeSeed(authorId) {
+  let upserted = 0
+  for (const article of KNOWLEDGE_SEED_ARTICLES) {
+    const publishedAt = new Date(`${article.publishedAt}T12:00:00.000Z`)
+    const payload = {
+      title: article.title,
+      slug: article.slug,
+      excerpt: article.excerpt,
+      tags: article.tags,
+      status: 'published',
+      isTemplate: false,
+      blocks: article.blocks,
+      author: authorId,
+      publishedAt,
+    }
+
+    await KnowledgePost.findOneAndUpdate(
+      { slug: article.slug },
+      { $set: payload },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    )
+    upserted += 1
+  }
+  console.log(`[seed] Knowledge Hub articles upserted: ${upserted}`)
 }
 
 async function run() {
   await connectDb()
-  await ensureAdminSeed()
-  console.log('[seed] Ready — no sample catalog or order data')
+  const admin = await ensureAdminSeed()
+  await ensureKnowledgeSeed(admin._id)
+  console.log('[seed] Ready')
   process.exit(0)
 }
 

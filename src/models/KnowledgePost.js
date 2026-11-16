@@ -13,6 +13,8 @@ const ctaSchema = new mongoose.Schema(
     headline: { type: String, default: '' },
     body: { type: String, default: '' },
     bullets: { type: [String], default: [] },
+    supportIntro: { type: String, default: '' },
+    supportBullets: { type: [String], default: [] },
     buttons: { type: [ctaButtonSchema], default: [] },
     primaryLabel: { type: String, default: '' },
     primaryTo: { type: String, default: '' },

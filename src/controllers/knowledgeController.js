@@ -11,6 +11,8 @@ const ctaSchema = z.object({
   headline: z.string().optional().default(''),
   body: z.string().optional().default(''),
   bullets: z.array(z.string()).optional().default([]),
+  supportIntro: z.string().optional().default(''),
+  supportBullets: z.array(z.string()).optional().default([]),
   buttons: z.array(ctaButtonSchema).optional().default([]),
   primaryLabel: z.string().optional().default(''),
   primaryTo: z.string().optional().default(''),
@@ -33,8 +35,16 @@ const postSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).max(12).optional().default([]),
   isTemplate: z.boolean().optional().default(false),
   status: z.enum(['draft', 'published']).optional().default('draft'),
+  publishedAt: z.union([z.string(), z.date()]).optional().nullable(),
   blocks: z.array(blockSchema).optional().default([]),
 })
+
+function resolvePublishedAt(value, fallback = new Date()) {
+  if (value === null || value === '') return undefined
+  if (!value) return fallback
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? fallback : date
+}
 
 function slugify(value) {
   return String(value || '')
@@ -69,6 +79,8 @@ function normalizeCta(cta = {}) {
     headline: cta.headline || '',
     body: cta.body || '',
     bullets: cta.bullets || [],
+    supportIntro: cta.supportIntro || '',
+    supportBullets: Array.isArray(cta.supportBullets) ? cta.supportBullets.filter(Boolean) : [],
     buttons,
     primaryLabel: buttons[0]?.label || '',
     primaryTo: buttons[0]?.to || '',
@@ -262,12 +274,15 @@ export async function createPost(req, res, next) {
       title: body.title,
       slug,
       tags: normalizeTags(body.tags),
-      excerpt: normalizeTags(body.tags).join(', ') || body.excerpt || '',
+      excerpt: body.excerpt || '',
       status: body.status,
       isTemplate: Boolean(body.isTemplate),
       blocks: body.blocks,
       author: req.admin._id,
-      publishedAt: body.status === 'published' ? new Date() : undefined,
+      publishedAt:
+        body.status === 'published'
+          ? resolvePublishedAt(body.publishedAt, new Date())
+          : resolvePublishedAt(body.publishedAt, undefined),
     })
     await post.populate('author', 'name email')
     res.status(201).json({ success: true, data: serializePost(post) })
@@ -286,21 +301,20 @@ export async function updatePost(req, res, next) {
     if (!post) throw new AppError('Post not found', 404)
 
     if (body.title !== undefined) post.title = body.title
-    if (body.tags !== undefined) {
-      post.tags = normalizeTags(body.tags)
-      post.excerpt = post.tags.join(', ')
-    } else if (body.excerpt !== undefined) {
-      post.excerpt = body.excerpt
-    }
+    if (body.excerpt !== undefined) post.excerpt = body.excerpt
+    if (body.tags !== undefined) post.tags = normalizeTags(body.tags)
     if (body.blocks !== undefined) post.blocks = body.blocks
     if (body.slug !== undefined) {
       post.slug = await uniqueSlug(body.slug || body.title || post.title, post._id)
     }
     if (body.isTemplate !== undefined) post.isTemplate = body.isTemplate
+    if (body.publishedAt !== undefined) {
+      post.publishedAt = resolvePublishedAt(body.publishedAt, post.publishedAt || new Date())
+    }
     if (body.status !== undefined) {
       post.status = body.status
       if (body.status === 'published' && !post.publishedAt) {
-        post.publishedAt = new Date()
+        post.publishedAt = resolvePublishedAt(body.publishedAt, new Date())
       }
     }
 
