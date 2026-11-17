@@ -6,6 +6,7 @@ import { Product } from '../models/Product.js'
 import { AppError } from '../middleware/errorHandler.js'
 import { generateOrderNumber } from '../utils/orderNumber.js'
 import { uploadsDir } from '../middleware/upload.js'
+import { sendOrderAcknowledgement } from '../utils/mailer.js'
 
 function serializeOrder(order) {
   const data = order.toObject ? order.toObject() : { ...order }
@@ -16,6 +17,12 @@ function serializeOrder(order) {
       ? `/api/orders/${data._id}/attachment`
       : null,
   }
+}
+
+function normalizeQuantity(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 1) return 1
+  return Math.min(999999, Math.floor(n))
 }
 
 const rfqProductSchema = z.object({
@@ -33,6 +40,7 @@ const rfqProductSchema = z.object({
   generic: z.string().optional(),
   strength: z.string().optional(),
   packSize: z.string().optional(),
+  quantity: z.union([z.number(), z.string()]).optional(),
 })
 
 const createOrderSchema = z.object({
@@ -49,7 +57,6 @@ const createOrderSchema = z.object({
   company: z.string().trim().min(1, 'Company is required'),
   jobTitle: z.string().trim().optional().default(''),
   email: z.string().trim().email('Valid email is required'),
-  phone: z.string().trim().optional().default(''),
   country: z.string().trim().optional().default(''),
   products: z.array(rfqProductSchema).optional().default([]),
   product: z.string().optional(),
@@ -91,6 +98,7 @@ async function resolveProducts(inputProducts = []) {
       generic: productDoc?.generic || item.generic || '',
       strength: productDoc?.strength || item.strength || '',
       packSize: productDoc?.packSize || item.packSize || '',
+      quantity: normalizeQuantity(item.quantity),
     })
   }
 
@@ -106,6 +114,8 @@ function normalizeOrderBody(raw = {}) {
       body.products = []
     }
   }
+  // Ignore legacy phone field if clients still send it
+  delete body.phone
   return body
 }
 
@@ -128,8 +138,14 @@ export async function createOrder(req, res, next) {
       notes = body.message || body.notes || ''
     }
 
-    if (!products.length && !customProduct.trim()) {
-      throw new AppError('Add at least one catalog product or a custom product', 400)
+    const hasCatalog = products.length > 0
+    const hasManual = Boolean(String(customProduct || '').trim())
+    const hasAttachment = Boolean(req.file)
+    if (!hasCatalog && !hasManual && !hasAttachment) {
+      throw new AppError(
+        'Product selection, manual requirement, or attachment — at least one is required',
+        400,
+      )
     }
 
     const order = await Order.create({
@@ -148,11 +164,16 @@ export async function createOrder(req, res, next) {
       company: body.company,
       jobTitle: body.jobTitle,
       email: body.email,
-      phone: body.phone,
       country: body.country,
       attachmentName: req.file?.originalname || '',
       attachmentPath: req.file?.filename || '',
     })
+
+    try {
+      await sendOrderAcknowledgement(order)
+    } catch (mailError) {
+      console.error('[mailer] acknowledgement failed:', mailError.message || mailError)
+    }
 
     res.status(201).json({
       success: true,
