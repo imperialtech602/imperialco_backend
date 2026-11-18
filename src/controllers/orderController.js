@@ -169,12 +169,6 @@ export async function createOrder(req, res, next) {
       attachmentPath: req.file?.filename || '',
     })
 
-    try {
-      await sendOrderAcknowledgement(order)
-    } catch (mailError) {
-      console.error('[mailer] acknowledgement failed:', mailError.message || mailError)
-    }
-
     res.status(201).json({
       success: true,
       data: {
@@ -183,6 +177,13 @@ export async function createOrder(req, res, next) {
         status: order.status,
         createdAt: order.createdAt,
       },
+    })
+
+    // Send email after response so the form does not wait on SMTP
+    setImmediate(() => {
+      sendOrderAcknowledgement(order).catch((mailError) => {
+        console.error('[mailer] acknowledgement failed:', mailError.message || mailError)
+      })
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
