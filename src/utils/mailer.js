@@ -35,6 +35,52 @@ export function isMailConfigured() {
   return Boolean(env.mailFrom && (env.resendApiKey || (env.smtpHost && env.smtpUser && env.smtpPass)))
 }
 
+function display(value) {
+  const text = String(value ?? '').trim()
+  return text || '—'
+}
+
+function productListHtml(order) {
+  if (!order.products?.length) {
+    return '<p style="margin:0;color:#64748b;">No catalog products selected.</p>'
+  }
+  return `<ul style="margin:0;padding-left:18px;">${order.products
+    .map(
+      (p, i) =>
+        `<li style="margin:0 0 8px;">
+          <strong>${i + 1}. ${escapeHtml(p.itemName)}</strong><br/>
+          Qty: ${Number(p.quantity) || 1}
+          ${p.manufacturer ? ` · ${escapeHtml(p.manufacturer)}` : ''}
+          ${
+            p.countryOfOrigin
+              ? ` · ${escapeHtml(String(p.countryOfOrigin).toUpperCase())}`
+              : ''
+          }
+          ${p.dosageForm ? ` · ${escapeHtml(p.dosageForm)}` : ''}
+          ${p.therapeuticClass ? ` · ${escapeHtml(p.therapeuticClass)}` : ''}
+          ${p.itemId ? `<br/><span style="color:#64748b;">ID: ${escapeHtml(p.itemId)}</span>` : ''}
+        </li>`,
+    )
+    .join('')}</ul>`
+}
+
+function productListText(order) {
+  if (!order.products?.length) return 'No catalog products selected.'
+  return order.products
+    .map((p, i) => {
+      const parts = [
+        `${i + 1}. ${p.itemName}`,
+        `Qty: ${Number(p.quantity) || 1}`,
+        p.manufacturer,
+        p.countryOfOrigin ? String(p.countryOfOrigin).toUpperCase() : '',
+        p.dosageForm,
+        p.itemId ? `ID: ${p.itemId}` : '',
+      ].filter(Boolean)
+      return parts.join(' · ')
+    })
+    .join('\n')
+}
+
 function buildAcknowledgementContent(order) {
   const productLines =
     order.products?.length > 0
@@ -103,41 +149,134 @@ function buildAcknowledgementContent(order) {
   }
 }
 
-export async function sendOrderAcknowledgement(order) {
+function buildInternalNotificationContent(order) {
+  const rows = [
+    ['Order number', order.orderNumber],
+    ['Source', order.source],
+    ['Submitted', order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Just now'],
+    ['First name', order.firstName],
+    ['Last name', order.lastName],
+    ['Company', order.company],
+    ['Job title', order.jobTitle],
+    ['Email', order.email],
+    ['Country', order.country],
+    ['Custom requirements', order.customProduct],
+    ['Notes', order.notes],
+    ['Packs', order.packs],
+    ['Origin preference', order.originPreference],
+    ['Intended use', order.intendedUse],
+    ['Target market', order.targetMarket],
+    [
+      'Required by',
+      order.requiredBy ? new Date(order.requiredBy).toLocaleDateString() : '',
+    ],
+    ['Attachment', order.attachmentName || (order.attachmentPath ? 'Yes' : '')],
+  ]
+
+  const detailsHtml = rows
+    .map(
+      ([label, value]) => `
+      <tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #e8e9ff;color:#64748b;width:38%;vertical-align:top;">${escapeHtml(label)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e8e9ff;color:#1a1a2e;vertical-align:top;white-space:pre-wrap;">${escapeHtml(display(value))}</td>
+      </tr>`,
+    )
+    .join('')
+
+  const html = `
+    <div style="font-family:Manrope,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a1a2e;">
+      <div style="background:#282a74;padding:20px 24px;border-radius:12px 12px 0 0;">
+        <p style="margin:0;color:#fff;font-size:18px;font-weight:700;">New RFQ submission</p>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">${escapeHtml(order.orderNumber)}</p>
+      </div>
+      <div style="border:1px solid #e8e9ff;border-top:none;padding:20px 24px;border-radius:0 0 12px 12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">${detailsHtml}</table>
+        <p style="margin:20px 0 8px;font-weight:700;">Catalog products</p>
+        ${productListHtml(order)}
+      </div>
+    </div>
+  `
+
+  const text = [
+    `New RFQ submission — ${order.orderNumber}`,
+    '',
+    ...rows.map(([label, value]) => `${label}: ${display(value)}`),
+    '',
+    'Catalog products:',
+    productListText(order),
+  ].join('\n')
+
+  return {
+    from: env.mailFrom,
+    to: env.mailNotifyTo,
+    replyTo: order.email || undefined,
+    subject: `New RFQ ${order.orderNumber} — ${display(order.company)}`,
+    text,
+    html,
+  }
+}
+
+async function sendMailPayload(payload, label) {
   if (!env.mailFrom) {
-    console.warn('[mailer] MAIL_FROM missing — skipping acknowledgement email')
+    console.warn(`[mailer] MAIL_FROM missing — skipping ${label}`)
+    return { skipped: true }
+  }
+  if (!payload.to) {
+    console.warn(`[mailer] No recipient for ${label} — skipping`)
     return { skipped: true }
   }
 
-  if (!order?.email) {
-    console.warn('[mailer] Order has no email — skipping acknowledgement')
-    return { skipped: true }
-  }
-
-  const payload = buildAcknowledgementContent(order)
   const resend = getResend()
-
   if (resend) {
     const { data, error } = await resend.emails.send(payload)
     if (error) {
-      console.error('[mailer] Resend error:', error)
+      console.error(`[mailer] Resend error (${label}):`, error)
       throw new Error(error.message || 'Resend send failed')
     }
-    console.log('[mailer] Acknowledgement sent via Resend:', data?.id, '→', order.email)
+    console.log(`[mailer] ${label} sent via Resend:`, data?.id, '→', payload.to)
     return { skipped: false, messageId: data?.id, provider: 'resend' }
   }
 
   const transport = getTransporter()
   if (!transport) {
     console.warn(
-      '[mailer] Email not configured — set RESEND_API_KEY + MAIL_FROM (or SMTP_*). Skipping.',
+      `[mailer] Email not configured — set RESEND_API_KEY + MAIL_FROM. Skipping ${label}.`,
     )
     return { skipped: true }
   }
 
   const info = await transport.sendMail(payload)
-  console.log('[mailer] Acknowledgement sent via SMTP:', info.messageId, '→', order.email)
+  console.log(`[mailer] ${label} sent via SMTP:`, info.messageId, '→', payload.to)
   return { skipped: false, messageId: info.messageId, provider: 'smtp' }
+}
+
+export async function sendOrderAcknowledgement(order) {
+  return sendMailPayload(buildAcknowledgementContent(order), 'acknowledgement')
+}
+
+export async function sendOrderInternalNotification(order) {
+  return sendMailPayload(buildInternalNotificationContent(order), 'internal notification')
+}
+
+/** Customer ack + full details to cs@imperialco.biz */
+export async function sendOrderEmails(order) {
+  const results = { acknowledgement: null, internal: null }
+
+  try {
+    results.acknowledgement = await sendOrderAcknowledgement(order)
+  } catch (error) {
+    console.error('[mailer] acknowledgement failed:', error.message || error)
+    results.acknowledgement = { skipped: false, error: error.message || String(error) }
+  }
+
+  try {
+    results.internal = await sendOrderInternalNotification(order)
+  } catch (error) {
+    console.error('[mailer] internal notification failed:', error.message || error)
+    results.internal = { skipped: false, error: error.message || String(error) }
+  }
+
+  return results
 }
 
 function escapeHtml(value) {

@@ -41,4 +41,9 @@ export const env = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   mailFrom: process.env.MAIL_FROM || process.env.SMTP_FROM || '',
+  /** Internal inbox that receives full RFQ details on every submission */
+  mailNotifyTo:
+    process.env.MAIL_NOTIFY_TO ||
+    process.env.NOTIFY_EMAIL ||
+    'cs@imperialco.biz',
 }

@@ -6,7 +6,7 @@ import { Product } from '../models/Product.js'
 import { AppError } from '../middleware/errorHandler.js'
 import { generateOrderNumber } from '../utils/orderNumber.js'
 import { uploadsDir } from '../middleware/upload.js'
-import { sendOrderAcknowledgement } from '../utils/mailer.js'
+import { sendOrderEmails } from '../utils/mailer.js'
 
 function serializeOrder(order) {
   const data = order.toObject ? order.toObject() : { ...order }
@@ -179,10 +179,10 @@ export async function createOrder(req, res, next) {
       },
     })
 
-    // Send email after response so the form does not wait on SMTP
+    // Send emails after response so the form does not wait on SMTP/Resend
     setImmediate(() => {
-      sendOrderAcknowledgement(order).catch((mailError) => {
-        console.error('[mailer] acknowledgement failed:', mailError.message || mailError)
+      sendOrderEmails(order).catch((mailError) => {
+        console.error('[mailer] order emails failed:', mailError.message || mailError)
       })
     })
   } catch (error) {
