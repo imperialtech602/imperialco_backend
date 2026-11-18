@@ -1,7 +1,16 @@
+import { Resend } from 'resend'
 import nodemailer from 'nodemailer'
 import { env } from '../config/env.js'
 
+let resendClient = null
 let transporter = null
+
+function getResend() {
+  if (resendClient) return resendClient
+  if (!env.resendApiKey) return null
+  resendClient = new Resend(env.resendApiKey)
+  return resendClient
+}
 
 function getTransporter() {
   if (transporter) return transporter
@@ -23,18 +32,10 @@ function getTransporter() {
 }
 
 export function isMailConfigured() {
-  return Boolean(env.smtpHost && env.smtpUser && env.smtpPass && env.mailFrom)
+  return Boolean(env.mailFrom && (env.resendApiKey || (env.smtpHost && env.smtpUser && env.smtpPass)))
 }
 
-export async function sendOrderAcknowledgement(order) {
-  const transport = getTransporter()
-  if (!transport) {
-    console.warn(
-      '[mailer] SMTP not configured — skipping acknowledgement email. Set SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM.',
-    )
-    return { skipped: true }
-  }
-
+function buildAcknowledgementContent(order) {
   const productLines =
     order.products?.length > 0
       ? order.products
@@ -84,22 +85,59 @@ export async function sendOrderAcknowledgement(order) {
     </div>
   `
 
-  const info = await transport.sendMail({
+  const text = [
+    `Hi ${order.firstName},`,
+    '',
+    `Thank you for your quote request. We have received order ${order.orderNumber}.`,
+    'Our sourcing team will follow up with availability, lead time, and shipping options.',
+    '',
+    'Imperial Co · cs@imperialco.biz',
+  ].join('\n')
+
+  return {
     from: env.mailFrom,
     to: order.email,
     subject: `We received your request — ${order.orderNumber}`,
-    text: [
-      `Hi ${order.firstName},`,
-      '',
-      `Thank you for your quote request. We have received order ${order.orderNumber}.`,
-      'Our sourcing team will follow up with availability, lead time, and shipping options.',
-      '',
-      'Imperial Co · cs@imperialco.biz',
-    ].join('\n'),
+    text,
     html,
-  })
+  }
+}
 
-  return { skipped: false, messageId: info.messageId }
+export async function sendOrderAcknowledgement(order) {
+  if (!env.mailFrom) {
+    console.warn('[mailer] MAIL_FROM missing — skipping acknowledgement email')
+    return { skipped: true }
+  }
+
+  if (!order?.email) {
+    console.warn('[mailer] Order has no email — skipping acknowledgement')
+    return { skipped: true }
+  }
+
+  const payload = buildAcknowledgementContent(order)
+  const resend = getResend()
+
+  if (resend) {
+    const { data, error } = await resend.emails.send(payload)
+    if (error) {
+      console.error('[mailer] Resend error:', error)
+      throw new Error(error.message || 'Resend send failed')
+    }
+    console.log('[mailer] Acknowledgement sent via Resend:', data?.id, '→', order.email)
+    return { skipped: false, messageId: data?.id, provider: 'resend' }
+  }
+
+  const transport = getTransporter()
+  if (!transport) {
+    console.warn(
+      '[mailer] Email not configured — set RESEND_API_KEY + MAIL_FROM (or SMTP_*). Skipping.',
+    )
+    return { skipped: true }
+  }
+
+  const info = await transport.sendMail(payload)
+  console.log('[mailer] Acknowledgement sent via SMTP:', info.messageId, '→', order.email)
+  return { skipped: false, messageId: info.messageId, provider: 'smtp' }
 }
 
 function escapeHtml(value) {

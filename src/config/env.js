@@ -32,7 +32,9 @@ export const env = {
   googleSheetsGid: process.env.GOOGLE_SHEETS_GID || '924637876',
   /** Full service-account JSON as a single-line string (preferred for private sheets). */
   googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
-  /** Optional SMTP for RFQ acknowledgement emails */
+  /** Preferred: Resend API key (https://resend.com/api-keys) */
+  resendApiKey: process.env.RESEND_API_KEY || process.env.SMTP_PASS || '',
+  /** Optional SMTP fallback for RFQ acknowledgement emails */
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(process.env.SMTP_PORT) || 587,
   smtpSecure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
