@@ -5,6 +5,7 @@ import {
   listOrders,
   getOrder,
   updateOrder,
+  deleteOrder,
   getDashboardStats,
   downloadOrderAttachment,
 } from '../controllers/orderController.js'
@@ -36,5 +37,6 @@ router.get('/', ...canOrders, listOrders)
 router.get('/:id/attachment', ...canOrders, downloadOrderAttachment)
 router.get('/:id', ...canOrders, getOrder)
 router.patch('/:id', ...canOrders, updateOrder)
+router.delete('/:id', ...canOrders, deleteOrder)
 
 export default router

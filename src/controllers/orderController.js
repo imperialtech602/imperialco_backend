@@ -269,6 +269,27 @@ export async function downloadOrderAttachment(req, res, next) {
   }
 }
 
+export async function deleteOrder(req, res, next) {
+  try {
+    const order = await Order.findById(req.params.id)
+    if (!order) throw new AppError('Order not found', 404)
+
+    if (order.attachmentPath) {
+      const filePath = path.join(uploadsDir, path.basename(order.attachmentPath))
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    }
+
+    await order.deleteOne()
+    res.json({
+      success: true,
+      message: 'Order deleted',
+      data: { id: order._id, orderNumber: order.orderNumber },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export async function updateOrder(req, res, next) {
   try {
     const body = updateStatusSchema.parse(req.body)
