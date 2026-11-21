@@ -1,6 +1,15 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Resend } from 'resend'
 import nodemailer from 'nodemailer'
 import { env } from '../config/env.js'
+
+const logoPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../assets/imperial-logo-full.png',
+)
+const LOGO_CID = 'imperial-logo'
 
 let resendClient = null
 let transporter = null
@@ -81,6 +90,25 @@ function productListText(order) {
     .join('\n')
 }
 
+function logoAttachment() {
+  if (!fs.existsSync(logoPath)) return null
+  return {
+    filename: 'imperial-logo.png',
+    path: logoPath,
+    cid: LOGO_CID,
+    contentId: LOGO_CID,
+    contentType: 'image/png',
+    contentDisposition: 'inline',
+  }
+}
+
+function customerHeaderHtml() {
+  if (!fs.existsSync(logoPath)) {
+    return '<p style="margin:0;color:#282a74;font-size:18px;font-weight:700;">Imperial Co</p>'
+  }
+  return `<img src="cid:${LOGO_CID}" alt="Imperial Co" width="180" height="48" style="display:block;width:180px;height:48px;border:0;outline:none;text-decoration:none;" />`
+}
+
 function buildAcknowledgementContent(order) {
   const productLines =
     order.products?.length > 0
@@ -104,15 +132,15 @@ function buildAcknowledgementContent(order) {
 
   const html = `
     <div style="font-family:Manrope,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e;">
-      <div style="background:#282a74;padding:20px 24px;border-radius:12px 12px 0 0;">
-        <p style="margin:0;color:#fff;font-size:18px;font-weight:700;">Imperial Co</p>
-        <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Request acknowledgement</p>
+      <div style="background:#ffffff;padding:20px 24px;border:1px solid #e8e9ff;border-bottom:none;border-radius:12px 12px 0 0;">
+        ${customerHeaderHtml()}
+        <p style="margin:10px 0 0;color:#64748b;font-size:13px;">Request acknowledgement</p>
       </div>
       <div style="border:1px solid #e8e9ff;border-top:none;padding:24px;border-radius:0 0 12px 12px;">
         <p style="margin:0 0 12px;">Hi ${escapeHtml(order.firstName)},</p>
         <p style="margin:0 0 12px;">
           Thank you for your quote request. We have received order
-          <strong>${escapeHtml(order.orderNumber)}</strong> and our sourcing team will follow up
+          <strong>${escapeHtml(order.orderNumber)}</strong> and our customer team will follow up
           with availability, lead time, and shipping options.
         </p>
         ${
@@ -140,12 +168,14 @@ function buildAcknowledgementContent(order) {
     'Imperial Co · cs@imperialco.biz',
   ].join('\n')
 
+  const attachment = logoAttachment()
   return {
     from: env.mailFrom,
     to: order.email,
     subject: `We received your request — ${order.orderNumber}`,
     text,
     html,
+    ...(attachment ? { attachments: [attachment] } : {}),
   }
 }
 
@@ -228,7 +258,17 @@ async function sendMailPayload(payload, label) {
 
   const resend = getResend()
   if (resend) {
-    const { data, error } = await resend.emails.send(payload)
+    const { attachments, ...rest } = payload
+    const resendPayload = { ...rest }
+    if (attachments?.length) {
+      resendPayload.attachments = attachments.map((file) => ({
+        filename: file.filename,
+        content: file.content || fs.readFileSync(file.path),
+        contentType: file.contentType,
+        contentId: file.contentId || file.cid,
+      }))
+    }
+    const { data, error } = await resend.emails.send(resendPayload)
     if (error) {
       console.error(`[mailer] Resend error (${label}):`, error)
       throw new Error(error.message || 'Resend send failed')
@@ -245,7 +285,11 @@ async function sendMailPayload(payload, label) {
     return { skipped: true }
   }
 
-  const info = await transport.sendMail(payload)
+  const { attachments, ...rest } = payload
+  const info = await transport.sendMail({
+    ...rest,
+    attachments: (attachments || []).map(({ contentId, ...file }) => file),
+  })
   console.log(`[mailer] ${label} sent via SMTP:`, info.messageId, '→', payload.to)
   return { skipped: false, messageId: info.messageId, provider: 'smtp' }
 }
