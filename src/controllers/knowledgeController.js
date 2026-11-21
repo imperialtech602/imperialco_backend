@@ -230,7 +230,7 @@ export async function listAdminPosts(req, res, next) {
     const [items, total] = await Promise.all([
       KnowledgePost.find(filter)
         .populate('author', 'name email')
-        .sort({ updatedAt: -1 })
+        .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
       KnowledgePost.countDocuments(filter),
